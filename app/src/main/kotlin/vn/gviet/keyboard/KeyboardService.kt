@@ -17,6 +17,7 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 
 class KeyboardService : InputMethodService() {
@@ -57,8 +58,8 @@ class KeyboardService : InputMethodService() {
         val bar = LinearLayout(this)
         bar.orientation = LinearLayout.HORIZONTAL
         tvViet = chip(1f) { toggleViet() }
-        tvMethod = chip(2.2f) { cycleMethod() }
-        tvCharset = chip(2.8f) { cycleCharset() }
+        tvMethod = chip(2.2f) { openMethodPicker() }
+        tvCharset = chip(2.8f) { openCharsetPicker() }
         val gear = chip(1f) {
             val i = Intent(this, SettingsActivity::class.java)
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -154,25 +155,59 @@ class KeyboardService : InputMethodService() {
         updateChips()
     }
 
-    private fun cycleMethod() {
-        finishWord()
-        val all = Method.values()
-        engine.method = all[(engine.method.ordinal + 1) % all.size]
-        Prefs.setMethod(this, engine.method)
-        updateChips()
+    private var pickerOpen = false
+
+    private fun openMethodPicker() {
+        showPicker(Method.values().map { it.label }, engine.method.ordinal) { i ->
+            engine.method = Method.values()[i]
+            Prefs.setMethod(this, engine.method)
+        }
     }
 
-    private fun cycleCharset() {
+    private fun openCharsetPicker() {
+        showPicker(Charset.values().map { it.label }, charset.ordinal) { i ->
+            charset = Charset.values()[i]
+            Prefs.setCharset(this, charset)
+        }
+    }
+
+    /** Danh sách chọn thay cho vùng phím; chạm lại vào chip để đóng. */
+    private fun showPicker(items: List<String>, selected: Int, onPick: (Int) -> Unit) {
         finishWord()
-        val all = Charset.values()
-        charset = all[(charset.ordinal + 1) % all.size]
-        Prefs.setCharset(this, charset)
-        updateChips()
+        if (pickerOpen) { buildKeys(); return }
+        pickerOpen = true
+        keyArea.removeAllViews()
+
+        val sv = ScrollView(this)
+        sv.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(260))
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        for ((i, label) in items.withIndex()) {
+            val t = TextView(this)
+            t.text = label
+            t.textSize = 16f
+            t.setTextColor(Color.WHITE)
+            t.setPadding(dp(16), dp(11), dp(16), dp(11))
+            t.background = round(if (i == selected) cAccent else cKey)
+            val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            lp.setMargins(dp(4), dp(3), dp(4), dp(3))
+            t.layoutParams = lp
+            t.setOnClickListener {
+                onPick(i)
+                buildKeys()
+                updateChips()
+            }
+            col.addView(t)
+        }
+        sv.addView(col)
+        keyArea.addView(sv)
+        sv.post { sv.scrollTo(0, maxOf(0, selected * dp(48) - dp(96))) }
     }
 
     // ------------------------------------------------------------ dựng phím
 
     private fun buildKeys() {
+        pickerOpen = false
         keyArea.removeAllViews()
         letterKeys.clear()
         shiftKey = null
